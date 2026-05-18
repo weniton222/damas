@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Checkers</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #1a1a2e;
+    --surface: #16213e;
+    --surface2: #0f3460;
+    --accent: #e94560;
+    --text: #eaeaea;
+    --text-dim: #8892a4;
+    --board-light: #f0d9b5;
+    --board-dark: #b58863;
+    --red-piece: #c0392b;
+    --red-piece-hi: #e74c3c;
+    --black-piece: #2c2c2c;
+    --black-piece-hi: #555;
+    --select-ring: #f1c40f;
+    --move-dot: rgba(241,196,15,0.75);
+    --capture-dot: rgba(231,76,60,0.8);
+    --shadow: 0 4px 24px rgba(0,0,0,0.5);
+    --radius: 12px;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 8px 32px;
+  }
+
+  h1 {
+    font-size: clamp(1.4rem, 4vw, 2rem);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    margin-bottom: 12px;
+    color: var(--text);
+  }
+
+  .layout {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    width: 100%;
+    max-width: 960px;
+    justify-content: center;
+  }
+
+  /* ── BOARD ── */
+  .board-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  #status-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+    min-height: 36px;
+    padding: 6px 14px;
+    border-radius: 99px;
+    background: var(--surface);
+    border: 2px solid transparent;
+    transition: border-color 0.3s;
+  }
+
+  #status-bar.red-turn  { border-color: var(--red-piece); }
+  #status-bar.black-turn { border-color: #aaa; }
+
+  .turn-dot {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+
+  #board {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    width: min(90vw, 520px);
+    height: min(90vw, 520px);
+    border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: var(--shadow);
+    user-select: none;
+  }
+
+  .cell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: default;
+    transition: background 0.15s;
+  }
+
+  .cell.light { background: var(--board-light); }
+  .cell.dark  { background: var(--board-dark); }
+  .cell.dark:hover { background: #c99a70; }
+
+  /* move / capture dots */
+  .cell.move-target::after,
+  .cell.capture-target::after {
+    content: '';
+    position: absolute;
+    width: 30%;
+    height: 30%;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .cell.move-target::after    { background: var(--move-dot); }
+  .cell.capture-target::after { background: var(--capture-dot); }
+  .cell.move-target, .cell.capture-target { cursor: pointer; }
+
+  /* ── PIECES ── */
+  .piece {
+    position: relative;
+    width: 72%;
+    height: 72%;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.12s, box-shadow 0.12s;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .piece.red {
+    background: radial-gradient(circle at 35% 35%, var(--red-piece-hi), var(--red-piece));
+    box-shadow: 0 3px 8px rgba(0,0,0,0.5), inset 0 1px 2px rgba(255,255,255,0.2);
+  }
+
+  .piece.black {
+    background: radial-gradient(circle at 35% 35%, var(--black-piece-hi), var(--black-piece));
+    box-shadow: 0 3px 8px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,255,255,0.12);
+  }
+
+  .piece.selectable { cursor: pointer; }
+  .piece.selectable:hover { transform: scale(1.07); }
+
+  .piece.selected {
+    box-shadow: 0 0 0 3px var(--select-ring), 0 3px 8px rgba(0,0,0,0.5);
+    transform: scale(1.1);
+  }
+
+  /* king crown */
+  .piece.king::after {
+    content: '♛';
+    font-size: 42%;
+    color: rgba(255,255,255,0.85);
+    position: absolute;
+    pointer-events: none;
+  }
+
+  /* ── SIDE PANEL ── */
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    width: 200px;
+    flex-shrink: 0;
+  }
+
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 14px;
+    box-shadow: var(--shadow);
+  }
+
+  .card h3 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+
+  .score-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    font-size: 0.92rem;
+  }
+
+  .score-dot {
+    width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+  }
+
+  .score-val {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .btn {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-secondary { background: var(--surface2); color: var(--text); }
+  .btn:disabled { opacity: 0.35; cursor: default; }
+
+  /* move history */
+  #history-list {
+    list-style: none;
+    max-height: 260px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  #history-list::-webkit-scrollbar { width: 4px; }
+  #history-list::-webkit-scrollbar-thumb { background: var(--surface2); border-radius: 4px; }
+
+  #history-list li {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    padding: 3px 6px;
+    border-radius: 5px;
+    background: rgba(255,255,255,0.04);
+    display: flex;
+    gap: 6px;
+  }
+  #history-list li span.mv-player {
+    font-weight: 700;
+    width: 12px;
+    flex-shrink: 0;
+  }
+  #history-list li span.mv-player.red   { color: var(--red-piece-hi); }
+  #history-list li span.mv-player.black { color: #bbb; }
+  #history-list li:last-child { background: rgba(255,255,255,0.09); color: var(--text); }
+
+  /* ── GAME OVER OVERLAY ── */
+  #overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(10,10,20,0.82);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  #overlay.show { display: flex; }
+
+  .overlay-box {
+    background: var(--surface);
+    border-radius: 20px;
+    padding: 40px 48px;
+    text-align: center;
+    box-shadow: 0 8px 48px rgba(0,0,0,0.6);
+    max-width: 360px;
+    width: 90%;
+  }
+  .overlay-box h2 { font-size: 1.8rem; margin-bottom: 8px; }
+  .overlay-box p  { color: var(--text-dim); margin-bottom: 24px; font-size: 0.95rem; }
+  .overlay-box .btn { max-width: 200px; margin: 0 auto; display: block; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 680px) {
+    .layout { flex-direction: column; align-items: center; }
+    .panel { width: min(90vw, 520px); flex-direction: row; flex-wrap: wrap; }
+    .panel .card { flex: 1 1 140px; }
+    #history-list { max-height: 120px; }
+  }
+</style>
+</head>
+<body>
+
+<h1>CHECKERS</h1>
+
+<div class="layout">
+  <div class="board-wrap">
+    <div id="status-bar">
+      <div class="turn-dot" id="turn-dot"></div>
+      <span id="status-text">Red's turn</span>
+    </div>
+    <div id="board"></div>
+  </div>
+
+  <div class="panel">
+    <div class="card">
+      <h3>Captured</h3>
+      <div class="score-row">
+        <div style="display:flex;align-items:center;gap:7px;">
+          <div class="score-dot" style="background:var(--red-piece)"></div>
+          <span style="font-size:0.85rem;color:var(--text-dim)">Red</span>
+        </div>
+        <span class="score-val" id="red-cap">0</span>
+      </div>
+      <div class="score-row">
+        <div style="display:flex;align-items:center;gap:7px;">
+          <div class="score-dot" style="background:#888"></div>
+          <span style="font-size:0.85rem;color:var(--text-dim)">Black</span>
+        </div>
+        <span class="score-val" id="black-cap">0</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Actions</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="btn btn-primary" id="new-btn">New Game</button>
+        <button class="btn btn-secondary" id="undo-btn">Undo Move</button>
+      </div>
+    </div>
+
+    <div class="card" style="flex:1">
+      <h3>Move History</h3>
+      <ul id="history-list"></ul>
+    </div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div class="overlay-box">
+    <h2 id="overlay-title">Winner!</h2>
+    <p id="overlay-msg">Congratulations!</p>
+    <button class="btn btn-primary" id="overlay-new-btn">Play Again</button>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+//  CONSTANTS
+// ════════════════════════════════════════════════════════
+const EMPTY = 0, RED = 1, BLACK = 2;
+const ROWS = 8, COLS = 8;
+const STORAGE_KEY = 'checkers_save_v1';
+
+// ════════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════════
+let state = {
+  board: [],          // flat 64-element array; value: 0=empty, 1=red, 2=black, 3=red-king, 4=black-king
+  turn: RED,          // whose turn
+  selected: null,     // index of selected piece
+  mustJumpFrom: null, // during multi-jump, index of jumping piece
+  history: [],        // [{board, turn, captured, moveDesc}] snapshots for undo
+  capturedRed: 0,     // black captured red pieces
+  capturedBlack: 0,   // red captured black pieces
+  moves: [],          // [{player, desc}] text history
+  gameOver: false,
+};
+
+// ════════════════════════════════════════════════════════
+//  BOARD HELPERS
+// ════════════════════════════════════════════════════════
+const idx = (r, c) => r * COLS + c;
+const row = (i) => Math.floor(i / COLS);
+const col = (i) => i % COLS;
+const isRed   = (v) => v === 1 || v === 3;
+const isBlack = (v) => v === 2 || v === 4;
+const isKing  = (v) => v === 3 || v === 4;
+const owns    = (player, v) => player === RED ? isRed(v) : isBlack(v);
+const opponent = (player) => player === RED ? BLACK : RED;
+const kingOf   = (player) => player === RED ? 3 : 4;
+const label    = (player) => player === RED ? 'Red' : 'Black';
+
+function initBoard() {
+  const b = new Array(64).fill(EMPTY);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if ((r + c) % 2 === 1) {
+        if (r < 3)      b[idx(r,c)] = BLACK;
+        else if (r > 4) b[idx(r,c)] = RED;
+      }
+    }
+  }
+  return b;
+}
+
+// ════════════════════════════════════════════════════════
+//  MOVE GENERATION
+// ════════════════════════════════════════════════════════
+
+/**
+ * Returns all jump moves for a piece at index `from`.
+ * Each jump: { from, to, captured }
+ */
+function getJumpsFor(board, from, player) {
+  const v = board[from];
+  if (!owns(player, v)) return [];
+  const r = row(from), c = col(from);
+  const dirs = [];
+  if (!isKing(v)) {
+    dirs.push(...(player === RED ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]]));
+  } else {
+    dirs.push([-1,-1],[-1,1],[1,-1],[1,1]);
+  }
+  const jumps = [];
+  for (const [dr, dc] of dirs) {
+    const mr = r + dr, mc = c + dc;       // middle (opponent)
+    const lr = r + 2*dr, lc = c + 2*dc;  // landing
+    if (mr < 0 || mr >= ROWS || mc < 0 || mc >= COLS) continue;
+    if (lr < 0 || lr >= ROWS || lc < 0 || lc >= COLS) continue;
+    const mid = idx(mr, mc);
+    const land = idx(lr, lc);
+    if (owns(opponent(player), board[mid]) && board[land] === EMPTY) {
+      jumps.push({ from, to: land, captured: mid });
+    }
+  }
+  return jumps;
+}
+
+/**
+ * Returns all simple (non-jump) moves for a piece at `from`.
+ */
+function getSimpleMovesFor(board, from, player) {
+  const v = board[from];
+  if (!owns(player, v)) return [];
+  const r = row(from), c = col(from);
+  const dirs = [];
+  if (!isKing(v)) {
+    dirs.push(...(player === RED ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]]));
+  } else {
+    dirs.push([-1,-1],[-1,1],[1,-1],[1,1]);
+  }
+  const moves = [];
+  for (const [dr, dc] of dirs) {
+    const nr = r + dr, nc = c + dc;
+    if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+    const ni = idx(nr, nc);
+    if (board[ni] === EMPTY) moves.push({ from, to: ni, captured: null });
+  }
+  return moves;
+}
+
+/**
+ * All legal moves for the current player (forced-jump rule applied).
+ */
+function getAllMoves(board, player) {
+  const pieces = [];
+  for (let i = 0; i < 64; i++) {
+    if (owns(player, board[i])) pieces.push(i);
+  }
+  const jumps = pieces.flatMap(p => getJumpsFor(board, p, player));
+  if (jumps.length > 0) return jumps;
+  return pieces.flatMap(p => getSimpleMovesFor(board, p, player));
+}
+
+/**
+ * Legal moves restricted to a single piece (for multi-jump enforcement).
+ */
+function getMovesFor(board, from, player, jumpOnly) {
+  const jumps = getJumpsFor(board, from, player);
+  if (jumps.length > 0 || jumpOnly) return jumps;
+  return getSimpleMovesFor(board, from, player);
+}
+
+// ════════════════════════════════════════════════════════
+//  APPLY MOVE
+// ════════════════════════════════════════════════════════
+function applyMove(board, move) {
+  const b = [...board];
+  b[move.to] = b[move.from];
+  b[move.from] = EMPTY;
+  if (move.captured !== null) b[move.captured] = EMPTY;
+  // king promotion
+  const r = row(move.to);
+  if (b[move.to] === RED   && r === 0) b[move.to] = 3;
+  if (b[move.to] === BLACK && r === 7) b[move.to] = 4;
+  return b;
+}
+
+// ════════════════════════════════════════════════════════
+//  CHECK GAME OVER
+// ════════════════════════════════════════════════════════
+function checkGameOver(board, player) {
+  return getAllMoves(board, player).length === 0;
+}
+
+// ════════════════════════════════════════════════════════
+//  COORDINATE LABEL  (a1-h8 style)
+// ════════════════════════════════════════════════════════
+const colLetter = (c) => String.fromCharCode(65 + c);
+const rowNumber = (r) => ROWS - r;
+const posLabel  = (i) => colLetter(col(i)) + rowNumber(row(i));
+
+// ════════════════════════════════════════════════════════
+//  SAVE / LOAD
+// ════════════════════════════════════════════════════════
+function saveGame() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch(e) {}
+}
+
+function loadGame() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) { state = JSON.parse(raw); return true; }
+  } catch(e) {}
+  return false;
+}
+
+// ════════════════════════════════════════════════════════
+//  UI RENDERING
+// ════════════════════════════════════════════════════════
+const boardEl      = document.getElementById('board');
+const statusBar    = document.getElementById('status-bar');
+const statusText   = document.getElementById('status-text');
+const turnDot      = document.getElementById('turn-dot');
+const redCapEl     = document.getElementById('red-cap');
+const blackCapEl   = document.getElementById('black-cap');
+const historyList  = document.getElementById('history-list');
+const undoBtn      = document.getElementById('undo-btn');
+const overlay      = document.getElementById('overlay');
+const overlayTitle = document.getElementById('overlay-title');
+const overlayMsg   = document.getElementById('overlay-msg');
+
+let legalMoves = []; // current legal destinations for selected piece / all pieces
+
+function render() {
+  const { board, turn, selected, mustJumpFrom, gameOver } = state;
+
+  // Determine which moves to highlight
+  const allMoves = getAllMoves(board, turn);
+  const selectablePieces = new Set(allMoves.map(m => m.from));
+
+  // If a piece is selected, show its specific moves
+  let highlightedMoves = [];
+  if (selected !== null) {
+    const jumpOnly = allMoves.some(m => m.captured !== null);
+    highlightedMoves = getMovesFor(board, selected, turn, jumpOnly);
+  }
+  const moveTargets   = new Set(highlightedMoves.filter(m => !m.captured).map(m => m.to));
+  const captureTargets = new Set(highlightedMoves.filter(m => m.captured).map(m => m.to));
+
+  legalMoves = highlightedMoves;
+
+  // Render cells
+  for (let i = 0; i < 64; i++) {
+    const cell = boardEl.children[i];
+    const r = row(i), c = col(i);
+    const isDark = (r + c) % 2 === 1;
+    const val = board[i];
+
+    cell.className = 'cell ' + (isDark ? 'dark' : 'light');
+    if (moveTargets.has(i))    cell.classList.add('move-target');
+    if (captureTargets.has(i)) cell.classList.add('capture-target');
+    cell.innerHTML = '';
+
+    if (val !== EMPTY) {
+      const piece = document.createElement('div');
+      piece.className = 'piece ' + (isRed(val) ? 'red' : 'black');
+      if (isKing(val)) piece.classList.add('king');
+      if (!gameOver && selectablePieces.has(i)) piece.classList.add('selectable');
+      if (selected === i) piece.classList.add('selected');
+      cell.appendChild(piece);
+    }
+  }
+
+  // Status bar
+  const redColor = '#e74c3c', blackColor = '#aaa';
+  turnDot.style.background = turn === RED ? redColor : blackColor;
+  statusBar.className = turn === RED ? 'red-turn' : 'black-turn';
+  statusText.textContent = mustJumpFrom !== null
+    ? `${label(turn)} must continue jump!`
+    : `${label(turn)}'s turn`;
+
+  // Captures
+  redCapEl.textContent   = state.capturedRed;
+  blackCapEl.textContent = state.capturedBlack;
+
+  // Undo button
+  undoBtn.disabled = state.history.length === 0 || gameOver;
+
+  // Move history
+  historyList.innerHTML = '';
+  state.moves.forEach(m => {
+    const li = document.createElement('li');
+    const sp = document.createElement('span');
+    sp.className = 'mv-player ' + (m.player === RED ? 'red' : 'black');
+    sp.textContent = m.player === RED ? '●' : '○';
+    li.appendChild(sp);
+    li.appendChild(document.createTextNode(m.desc));
+    historyList.appendChild(li);
+  });
+  historyList.scrollTop = historyList.scrollHeight;
+}
+
+// ════════════════════════════════════════════════════════
+//  BUILD BOARD DOM (once)
+// ════════════════════════════════════════════════════════
+function buildBoardDOM() {
+  boardEl.innerHTML = '';
+  for (let i = 0; i < 64; i++) {
+    const cell = document.createElement('div');
+    cell.dataset.idx = i;
+    cell.addEventListener('click', () => handleCellClick(i));
+    boardEl.appendChild(cell);
+  }
+}
+
+// ════════════════════════════════════════════════════════
+//  INTERACTION
+// ════════════════════════════════════════════════════════
+function handleCellClick(i) {
+  if (state.gameOver) return;
+
+  const { board, turn, selected, mustJumpFrom } = state;
+  const val = board[i];
+  const allMoves = getAllMoves(board, turn);
+  const hasJumps = allMoves.some(m => m.captured !== null);
+
+  // If mid-jump, only the jumping piece can act
+  if (mustJumpFrom !== null) {
+    const move = legalMoves.find(m => m.to === i);
+    if (move) { executeMove(move); return; }
+    return; // ignore other clicks
+  }
+
+  // Click on own piece → select it
+  if (val !== EMPTY && owns(turn, val)) {
+    // Only allow selection if this piece has moves
+    const pieceMoves = hasJumps
+      ? getJumpsFor(board, i, turn)
+      : getSimpleMovesFor(board, i, turn);
+    if (pieceMoves.length > 0) {
+      state.selected = i;
+      render();
+    }
+    return;
+  }
+
+  // Click on a target cell → execute move if selected
+  if (selected !== null) {
+    const move = legalMoves.find(m => m.to === i);
+    if (move) { executeMove(move); return; }
+    // Deselect if clicking elsewhere
+    state.selected = null;
+    render();
+  }
+}
+
+function executeMove(move) {
+  const { board, turn } = state;
+
+  // Push snapshot for undo
+  state.history.push({
+    board: [...board],
+    turn: state.turn,
+    capturedRed: state.capturedRed,
+    capturedBlack: state.capturedBlack,
+    moves: [...state.moves],
+    mustJumpFrom: state.mustJumpFrom,
+    selected: state.selected,
+  });
+
+  const newBoard = applyMove(board, move);
+  const isCapture = move.captured !== null;
+
+  // Update capture count
+  if (isCapture) {
+    if (turn === RED) state.capturedBlack++;
+    else              state.capturedRed++;
+  }
+
+  // Build move description
+  const desc = `${posLabel(move.from)}→${posLabel(move.to)}${isCapture ? '✕' : ''}`;
+  if (state.mustJumpFrom === null) {
+    // first leg: push new entry
+    state.moves.push({ player: turn, desc });
+  } else {
+    // multi-jump continuation: append to last entry
+    const last = state.moves[state.moves.length - 1];
+    last.desc += `→${posLabel(move.to)}${isCapture ? '✕' : ''}`;
+  }
+
+  state.board = newBoard;
+  state.selected = null;
+
+  // Check for multi-jump continuation
+  if (isCapture) {
+    // Did the piece become a king on this move? If so, multi-jump ends.
+    const becameKing = !isKing(board[move.from]) && isKing(newBoard[move.to]);
+    const furtherJumps = becameKing ? [] : getJumpsFor(newBoard, move.to, turn);
+    if (furtherJumps.length > 0) {
+      state.mustJumpFrom = move.to;
+      state.selected = move.to;
+      legalMoves = furtherJumps;
+      render();
+      saveGame();
+      return;
+    }
+  }
+
+  // End of turn
+  state.mustJumpFrom = null;
+  state.turn = opponent(turn);
+
+  // Check game over for next player
+  if (checkGameOver(newBoard, state.turn)) {
+    state.gameOver = true;
+    render();
+    showGameOver(turn);
+    saveGame();
+    return;
+  }
+
+  render();
+  saveGame();
+}
+
+// ════════════════════════════════════════════════════════
+//  GAME OVER
+// ════════════════════════════════════════════════════════
+function showGameOver(winner) {
+  overlayTitle.textContent = `${label(winner)} Wins!`;
+  overlayMsg.textContent   = `${label(opponent(winner))} has no legal moves remaining.`;
+  overlay.classList.add('show');
+}
+
+// ════════════════════════════════════════════════════════
+//  NEW GAME
+// ════════════════════════════════════════════════════════
+function newGame() {
+  state = {
+    board: initBoard(),
+    turn: RED,
+    selected: null,
+    mustJumpFrom: null,
+    history: [],
+    capturedRed: 0,
+    capturedBlack: 0,
+    moves: [],
+    gameOver: false,
+  };
+  overlay.classList.remove('show');
+  render();
+  saveGame();
+}
+
+// ════════════════════════════════════════════════════════
+//  UNDO
+// ════════════════════════════════════════════════════════
+function undoMove() {
+  if (state.history.length === 0) return;
+  const snap = state.history.pop();
+  state.board         = snap.board;
+  state.turn          = snap.turn;
+  state.capturedRed   = snap.capturedRed;
+  state.capturedBlack = snap.capturedBlack;
+  state.moves         = snap.moves;
+  state.mustJumpFrom  = snap.mustJumpFrom;
+  state.selected      = snap.selected;
+  state.gameOver      = false;
+  render();
+  saveGame();
+}
+
+// ════════════════════════════════════════════════════════
+//  EVENT LISTENERS
+// ════════════════════════════════════════════════════════
+document.getElementById('new-btn').addEventListener('click', newGame);
+document.getElementById('undo-btn').addEventListener('click', undoMove);
+document.getElementById('overlay-new-btn').addEventListener('click', newGame);
+
+// ════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════
+buildBoardDOM();
+if (!loadGame()) {
+  state.board = initBoard();
+}
+render();
+</script>
+</body>
+</html>
